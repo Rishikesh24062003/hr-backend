@@ -4,6 +4,7 @@ from flask_cors import CORS
 from flask_jwt_extended import JWTManager
 from dotenv import load_dotenv
 from database import init_db, close_db
+from config import Config
 
 # Initialize extensions
 jwt = JWTManager()
@@ -14,21 +15,21 @@ def create_app():
     
     app = Flask(__name__)
     
-    # Configuration
+    # Configuration using centralized config
     app.config.from_mapping(
-        SECRET_KEY=os.getenv('SECRET_KEY', 'dev-secret-key'),
-        MONGODB_URI=os.getenv('MONGODB_URI', 'mongodb+srv://rishikeshmishra477:LKXmeF6EWDi1pKeh@cluster0.s0xf7bg.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0'),
-        JWT_SECRET_KEY=os.getenv('JWT_SECRET_KEY', 'jwt-secret-key'),
-        JWT_ACCESS_TOKEN_EXPIRES=int(os.getenv('JWT_ACCESS_TOKEN_EXPIRES', '3600')),
-        UPLOAD_FOLDER=os.path.join(app.root_path, '..', 'uploads'),
-        MAX_CONTENT_LENGTH=int(os.getenv('MAX_CONTENT_LENGTH', '16777216')),
+        SECRET_KEY=Config.get_secret_key(),
+        MONGODB_URI=Config.get_mongodb_uri(),
+        JWT_SECRET_KEY=Config.get_jwt_secret_key(),
+        JWT_ACCESS_TOKEN_EXPIRES=Config.JWT_ACCESS_TOKEN_EXPIRES,
+        UPLOAD_FOLDER=os.path.join(app.root_path, '..', Config.UPLOAD_FOLDER),
+        MAX_CONTENT_LENGTH=Config.MAX_CONTENT_LENGTH,
     )
     
     # Initialize extensions
     jwt.init_app(app)
     
-    # Configure CORS
-    cors_origins = os.getenv('CORS_ORIGINS', 'http://localhost:5173,http://localhost:3000').split(',')
+    # Configure CORS using centralized config
+    cors_origins = Config.get_cors_origins()
     print(f"DEBUG: CORS Origins are {cors_origins}")
     CORS(app, origins=cors_origins)
     

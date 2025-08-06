@@ -9,6 +9,7 @@ from bson import ObjectId
 import hashlib
 from datetime import datetime
 from dotenv import load_dotenv
+from config import Config
 
 load_dotenv()
 
@@ -16,8 +17,8 @@ class MongoDB:
     """MongoDB connection and configuration class."""
     
     def __init__(self):
-        # MongoDB connection string
-        self.connection_string = os.getenv('MONGODB_URI', 'mongodb+srv://rishikeshmishra477:LKXmeF6EWDi1pKeh@cluster0.s0xf7bg.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0')
+        # MongoDB connection string from centralized config
+        self.connection_string = Config.get_mongodb_uri()
         self.client = None
         self.db = None
        

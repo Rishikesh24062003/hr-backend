@@ -4,12 +4,14 @@ import time
 from flask import Blueprint, request, jsonify, current_app
 from flask_jwt_extended import jwt_required
 from groq import Groq
+from config import Config
 
 bp = Blueprint('llm', __name__)
 
-# Load environment variables
-OPENAI_API_KEY = os.getenv("GROQ_API_KEY") or os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "llama-3.3-70b-versatile")
+# Load environment variables from centralized config
+llm_config = Config.get_llm_config()
+OPENAI_API_KEY = llm_config['groq_api_key']
+OPENAI_MODEL = llm_config['openai_model']
 print(f"DEBUG (llm.py): OPENAI_API_KEY is {OPENAI_API_KEY}")
 
 
@@ -19,6 +21,7 @@ def call_groq_api(prompt):
         raise RuntimeError("OPENAI_API_KEY not set")
 
     try:
+        current_app.logger.info(f"Calling Groq API with model: {OPENAI_MODEL}")
         client = Groq(api_key=OPENAI_API_KEY)
         completion = client.chat.completions.create(
             model=OPENAI_MODEL,
@@ -35,11 +38,13 @@ def call_groq_api(prompt):
         )
         
         content = completion.choices[0].message.content
-        current_app.logger.info(f"LLM response: {content}")
+        current_app.logger.info(f"LLM response received: {len(content)} characters")
         return content
 
     except Exception as e:
         current_app.logger.error(f"Groq API request failed: {e}")
+        current_app.logger.error(f"API Key present: {bool(OPENAI_API_KEY)}")
+        current_app.logger.error(f"Model: {OPENAI_MODEL}")
         raise RuntimeError(f"Failed to get response from Groq: {e}")
 
 
@@ -224,13 +229,35 @@ def rank_candidate_llm():
     if not resume_info or not job_desc:
         return jsonify({"error": "Both resume and job required"}), 400
 
-    raw_text = resume_info.get("raw_text", "")
+    # Handle different resume data formats
+    raw_text = ""
+    if isinstance(resume_info, dict):
+        # If resume_info is a parsed object, try to get raw_text or reconstruct from parsed data
+        if "raw_text" in resume_info:
+            raw_text = resume_info.get("raw_text", "")
+        elif "skills" in resume_info and "experience" in resume_info:
+            # Reconstruct text from parsed data
+            skills = resume_info.get("skills", [])
+            experience = resume_info.get("experience", [])
+            raw_text = f"Skills: {', '.join(skills) if isinstance(skills, list) else skills}\n\nExperience: {', '.join(experience) if isinstance(experience, list) else experience}"
+        else:
+            # Try to convert the entire object to a string representation
+            raw_text = str(resume_info)
+    elif isinstance(resume_info, str):
+        raw_text = resume_info
+    else:
+        raw_text = str(resume_info)
+
+    if not raw_text.strip():
+        return jsonify({"error": "No valid resume text found"}), 400
+
+    # Extract relevant sections for ranking
     sections = raw_text.split("\n\n")
     trimmed_sections = [
         sec for sec in sections
         if sec.strip().lower().startswith("skills") or sec.strip().lower().startswith("experience")
     ]
-    trimmed_text = "\n\n".join(trimmed_sections)
+    trimmed_text = "\n\n".join(trimmed_sections) if trimmed_sections else raw_text
 
     prompt = (
         f"Job description:\n{job_desc}\n\n"

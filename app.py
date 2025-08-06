@@ -3,6 +3,7 @@ from app import create_app
 
 app = create_app()
 
+# For Vercel deployment
 if __name__ == "__main__":
     # Create uploads directory if it doesn't exist
     uploads_dir = os.path.join(os.path.dirname(__file__), 'uploads')
