@@ -22,7 +22,7 @@ class Config:
     JWT_ACCESS_TOKEN_EXPIRES = int(os.getenv('JWT_ACCESS_TOKEN_EXPIRES'))
     
     # CORS Configuration
-    CORS_ORIGINS = os.getenv('CORS_ORIGINS').split(',')
+    CORS_ORIGINS = os.getenv('CORS_ORIGINS', 'http://localhost:5173,http://localhost:3000,https://hr-frontend-green.vercel.app').split(',')
     
     # File Upload Configuration
     MAX_CONTENT_LENGTH = int(os.getenv('MAX_CONTENT_LENGTH'))  # 16MB

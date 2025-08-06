@@ -31,7 +31,22 @@ def create_app():
     # Configure CORS using centralized config
     cors_origins = Config.get_cors_origins()
     print(f"DEBUG: CORS Origins are {cors_origins}")
-    CORS(app, origins=cors_origins)
+    
+    # More comprehensive CORS configuration for Vercel
+    CORS(app, 
+         origins=cors_origins,
+         methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+         allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
+         supports_credentials=True,
+         max_age=3600)
+    
+    # Add CORS preflight handler
+    @app.after_request
+    def after_request(response):
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+        response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+        return response
     
     # Register blueprints
     from .routes import register_blueprints
