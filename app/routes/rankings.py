@@ -4,7 +4,6 @@ from ..models.resume import Resume
 from ..models.job import Job
 from ..models.ranking import Ranking
 from ..utils.ranking_algorithm import calculate_ranking
-from .. import db
 
 bp = Blueprint('rankings', __name__)
 
@@ -18,10 +17,13 @@ def create_rankings():
             return jsonify({'error': 'Job ID is required'}), 400
         
         job_id = data.get('job_id')
-        job = Job.query.get_or_404(job_id)
+        job = Job.find_by_id(job_id)
+        if not job:
+            return jsonify({'error': 'Job not found'}), 404
         
-        # Get all resumes
-        resumes = Resume.query.filter_by(processing_status='completed').all()
+        # Get all completed resumes
+        result = Resume.get_all(status='completed', page=1, per_page=1000)  # Get all completed resumes
+        resumes = result['resumes']
         
         if not resumes:
             return jsonify({'error': 'No processed resumes found'}), 400
@@ -34,10 +36,7 @@ def create_rankings():
                 score_data = calculate_ranking(resume, job)
                 
                 # Check if ranking already exists
-                existing_ranking = Ranking.query.filter_by(
-                    resume_id=resume.id,
-                    job_id=job.id
-                ).first()
+                existing_ranking = Ranking.find_by_resume_and_job(resume.id, job.id)
                 
                 if existing_ranking:
                     # Update existing ranking
@@ -55,15 +54,14 @@ def create_rankings():
                         confidence_score=score_data['confidence_score'],
                         algorithm_version='1.0'
                     )
-                    db.session.add(ranking)
+                
+                ranking.save()
                 
                 rankings.append(ranking)
                 
             except Exception as e:
                 current_app.logger.error(f"Error ranking resume {resume.id}: {str(e)}")
                 continue
-        
-        db.session.commit()
         
         # Sort rankings by score
         rankings.sort(key=lambda x: x.overall_score, reverse=True)
@@ -77,49 +75,59 @@ def create_rankings():
         current_app.logger.error(f"Create rankings error: {str(e)}")
         return jsonify({'error': 'Failed to create rankings'}), 500
 
-@bp.route('/job/<int:job_id>', methods=['GET'])
+@bp.route('/job/<job_id>', methods=['GET'])
 @jwt_required()
 def get_job_rankings(job_id):
     """Get rankings for a specific job."""
     try:
-        job = Job.query.get_or_404(job_id)
+        job = Job.find_by_id(job_id)
+        if not job:
+            return jsonify({'error': 'Job not found'}), 404
         
-        rankings = Ranking.query.filter_by(job_id=job_id).order_by(
-            Ranking.overall_score.desc()
-        ).all()
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 10, type=int)
+        
+        rankings_result = Ranking.get_by_job(job_id, page=page, per_page=per_page)
         
         # Include resume information
         result = []
-        for ranking in rankings:
+        for ranking in rankings_result['rankings']:
             ranking_dict = ranking.to_dict()
-            ranking_dict['resume'] = ranking.resume.to_dict()
+            resume = Resume.find_by_id(ranking.resume_id)
+            if resume:
+                ranking_dict['resume'] = resume.to_dict()
             result.append(ranking_dict)
         
         return jsonify({
             'job': job.to_dict(),
-            'rankings': result
+            'rankings': result,
+            'total': rankings_result['total'],
+            'pages': rankings_result['pages'],
+            'current_page': page
         }), 200
         
     except Exception as e:
         current_app.logger.error(f"Get job rankings error: {str(e)}")
         return jsonify({'error': 'Failed to get job rankings'}), 500
 
-@bp.route('/resume/<int:resume_id>', methods=['GET'])
+@bp.route('/resume/<resume_id>', methods=['GET'])
 @jwt_required()
 def get_resume_rankings(resume_id):
     """Get rankings for a specific resume."""
     try:
-        resume = Resume.query.get_or_404(resume_id)
+        resume = Resume.find_by_id(resume_id)
+        if not resume:
+            return jsonify({'error': 'Resume not found'}), 404
         
-        rankings = Ranking.query.filter_by(resume_id=resume_id).order_by(
-            Ranking.overall_score.desc()
-        ).all()
+        rankings = Ranking.get_by_resume(resume_id)
         
         # Include job information
         result = []
         for ranking in rankings:
             ranking_dict = ranking.to_dict()
-            ranking_dict['job'] = ranking.job.to_dict()
+            job = Job.find_by_id(ranking.job_id)
+            if job:
+                ranking_dict['job'] = job.to_dict()
             result.append(ranking_dict)
         
         return jsonify({
@@ -131,15 +139,16 @@ def get_resume_rankings(resume_id):
         current_app.logger.error(f"Get resume rankings error: {str(e)}")
         return jsonify({'error': 'Failed to get resume rankings'}), 500
 
-@bp.route('/<int:ranking_id>', methods=['DELETE'])
+@bp.route('/<ranking_id>', methods=['DELETE'])
 @jwt_required()
 def delete_ranking(ranking_id):
     """Delete a ranking."""
     try:
-        ranking = Ranking.query.get_or_404(ranking_id)
+        ranking = Ranking.find_by_id(ranking_id)
+        if not ranking:
+            return jsonify({'error': 'Ranking not found'}), 404
         
-        db.session.delete(ranking)
-        db.session.commit()
+        ranking.delete()
         
         return jsonify({'message': 'Ranking deleted successfully'}), 200
         

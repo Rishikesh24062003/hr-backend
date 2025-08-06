@@ -1,7 +1,6 @@
 from flask import Blueprint, request, jsonify, current_app
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
 from ..models.user import User
-from .. import db
 
 bp = Blueprint('auth', __name__)
 
@@ -16,7 +15,7 @@ def login():
         email = data.get('email')
         password = data.get('password')
         
-        user = User.query.filter_by(email=email).first()
+        user = User.find_by_email(email)
         
         if not user or not user.check_password(password):
             return jsonify({'error': 'Invalid credentials'}), 401
@@ -42,7 +41,7 @@ def get_current_user():
     """Get current user information."""
     try:
         user_id = get_jwt_identity()
-        user = User.query.get(user_id)
+        user = User.find_by_id(user_id)
         
         if not user:
             return jsonify({'error': 'User not found'}), 404

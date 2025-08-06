@@ -116,7 +116,8 @@ def match_jobs():
     try:
         # Get available jobs from database
         from ..models.job import Job
-        jobs = Job.query.all()
+        result = Job.get_all(status=None, page=1, per_page=1000)  # Get all jobs
+        jobs = result['jobs']
         
         if not jobs:
             return jsonify({"error": "No jobs available for matching"}), 404

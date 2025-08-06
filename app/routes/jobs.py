@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify, current_app
 from flask_jwt_extended import jwt_required
 from ..models.job import Job
-from .. import db
+from datetime import datetime
 
 bp = Blueprint('jobs', __name__)
 
@@ -14,18 +14,12 @@ def get_jobs():
         per_page = request.args.get('per_page', 10, type=int)
         status = request.args.get('status', 'active')
         
-        query = Job.query
-        if status:
-            query = query.filter_by(status=status)
-        
-        jobs = query.paginate(
-            page=page, per_page=per_page, error_out=False
-        )
+        result = Job.get_all(status=status, page=page, per_page=per_page)
         
         return jsonify({
-            'jobs': [job.to_dict() for job in jobs.items],
-            'total': jobs.total,
-            'pages': jobs.pages,
+            'jobs': [job.to_dict() for job in result['jobs']],
+            'total': result['total'],
+            'pages': result['pages'],
             'current_page': page
         }), 200
         
@@ -42,6 +36,14 @@ def create_job():
         if not data or not data.get('title'):
             return jsonify({'error': 'Job title is required'}), 400
         
+        # Parse expires_at if provided
+        expires_at = data.get('expires_at')
+        if expires_at:
+            try:
+                expires_at = datetime.fromisoformat(expires_at.replace('Z', '+00:00'))
+            except:
+                expires_at = None
+        
         job = Job(
             title=data.get('title'),
             description=data.get('description', ''),
@@ -53,11 +55,10 @@ def create_job():
             salary_max=data.get('salary_max'),
             currency=data.get('currency', 'USD'),
             priority=data.get('priority', 1),
-            expires_at=data.get('expires_at')
+            expires_at=expires_at
         )
         
-        db.session.add(job)
-        db.session.commit()
+        job.save()
         
         return jsonify({
             'message': 'Job created successfully',
@@ -68,24 +69,29 @@ def create_job():
         current_app.logger.error(f"Create job error: {str(e)}")
         return jsonify({'error': 'Failed to create job'}), 500
 
-@bp.route('/<int:job_id>', methods=['GET'])
+@bp.route('/<job_id>', methods=['GET'])
 @jwt_required()
 def get_job(job_id):
     """Get specific job."""
     try:
-        job = Job.query.get_or_404(job_id)
+        job = Job.find_by_id(job_id)
+        if not job:
+            return jsonify({'error': 'Job not found'}), 404
         return jsonify(job.to_dict()), 200
         
     except Exception as e:
         current_app.logger.error(f"Get job error: {str(e)}")
         return jsonify({'error': 'Failed to get job'}), 500
 
-@bp.route('/<int:job_id>', methods=['PUT'])
+@bp.route('/<job_id>', methods=['PUT'])
 @jwt_required()
 def update_job(job_id):
     """Update a job."""
     try:
-        job = Job.query.get_or_404(job_id)
+        job = Job.find_by_id(job_id)
+        if not job:
+            return jsonify({'error': 'Job not found'}), 404
+        
         data = request.get_json()
         
         # Update fields
@@ -112,9 +118,16 @@ def update_job(job_id):
         if 'priority' in data:
             job.priority = data['priority']
         if 'expires_at' in data:
-            job.expires_at = data['expires_at']
+            expires_at = data['expires_at']
+            if expires_at:
+                try:
+                    job.expires_at = datetime.fromisoformat(expires_at.replace('Z', '+00:00'))
+                except:
+                    job.expires_at = None
+            else:
+                job.expires_at = None
         
-        db.session.commit()
+        job.save()
         
         return jsonify({
             'message': 'Job updated successfully',
@@ -125,15 +138,16 @@ def update_job(job_id):
         current_app.logger.error(f"Update job error: {str(e)}")
         return jsonify({'error': 'Failed to update job'}), 500
 
-@bp.route('/<int:job_id>', methods=['DELETE'])
+@bp.route('/<job_id>', methods=['DELETE'])
 @jwt_required()
 def delete_job(job_id):
     """Delete a job."""
     try:
-        job = Job.query.get_or_404(job_id)
+        job = Job.find_by_id(job_id)
+        if not job:
+            return jsonify({'error': 'Job not found'}), 404
         
-        db.session.delete(job)
-        db.session.commit()
+        job.delete()
         
         return jsonify({'message': 'Job deleted successfully'}), 200
         

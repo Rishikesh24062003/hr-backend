@@ -6,7 +6,7 @@ from flask_jwt_extended import jwt_required
 from werkzeug.utils import secure_filename
 from ..models.resume import Resume
 from ..utils.resume_parser import parse_resume
-from .. import db
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 bp = Blueprint('resumes', __name__)
@@ -22,13 +22,15 @@ def list_resumes():
     """List all uploaded resumes (paginated)."""
     page = request.args.get('page', type=int, default=1)
     per_page = request.args.get('per_page', type=int, default=10)
-    pagination = Resume.query.paginate(page=page, per_page=per_page, error_out=False)
-    resumes = [r.to_dict() for r in pagination.items]
+    status = request.args.get('status')
+    
+    result = Resume.get_all(status=status, page=page, per_page=per_page)
+    
     return jsonify({
-        'resumes': resumes,
-        'total': pagination.total,
-        'pages': pagination.pages,
-        'current_page': pagination.page
+        'resumes': [r.to_dict() for r in result['resumes']],
+        'total': result['total'],
+        'pages': result['pages'],
+        'current_page': page
     }), 200
 
 @bp.route('/', methods=['POST'])
@@ -68,8 +70,7 @@ def upload_resume():
         mime_type=file.content_type,
         processing_status='processing'
     )
-    db.session.add(resume)
-    db.session.commit()
+    resume.save()
     logger.info(f"Created resume record ID={resume.id}")
 
     # Parse resume text
@@ -85,7 +86,8 @@ def upload_resume():
         resume.candidate_email = parsed.get('email')
         resume.candidate_phone = parsed.get('phone')
         resume.processing_status = 'completed'
-        db.session.commit()
+        resume.processed_at = datetime.utcnow()
+        resume.save()
         logger.info(f"Resume ID={resume.id} parsed successfully")
         return jsonify({'message': 'Uploaded', 'resume': resume.to_dict(include_text=True)}), 201
 
@@ -93,28 +95,33 @@ def upload_resume():
         logger.error(f"Parsing failed for resume ID={resume.id}: {e}")
         resume.processing_status = 'failed'
         resume.error_message = str(e)
-        db.session.commit()
+        resume.save()
         return jsonify({'error': f"Could not extract text: {e}"}), 400
 
-@bp.route('/<int:resume_id>', methods=['GET'])
+@bp.route('/<resume_id>', methods=['GET'])
 @jwt_required()
-def get_resume(resume_id: int):
+def get_resume(resume_id: str):
     """Retrieve a specific resume by ID."""
-    resume = Resume.query.get_or_404(resume_id)
+    resume = Resume.find_by_id(resume_id)
+    if not resume:
+        return jsonify({'error': 'Resume not found'}), 404
     include_text = request.args.get('include_text', 'false').lower() == 'true'
     return jsonify(resume.to_dict(include_text=include_text)), 200
 
-@bp.route('/<int:resume_id>', methods=['DELETE'])
+@bp.route('/<resume_id>', methods=['DELETE'])
 @jwt_required()
-def delete_resume(resume_id: int):
+def delete_resume(resume_id: str):
     """Delete a specific resume."""
-    resume = Resume.query.get_or_404(resume_id)
+    resume = Resume.find_by_id(resume_id)
+    if not resume:
+        return jsonify({'error': 'Resume not found'}), 404
+    
     try:
-        if os.path.exists(resume.file_path):
+        if resume.file_path and os.path.exists(resume.file_path):
             os.remove(resume.file_path)
             logger.info(f"Deleted file at {resume.file_path}")
     except Exception as e:
         logger.warning(f"Failed to delete file: {e}")
-    db.session.delete(resume)
-    db.session.commit()
+    
+    resume.delete()
     return jsonify({'message': 'Resume deleted successfully'}), 200
