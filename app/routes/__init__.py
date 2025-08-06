@@ -5,12 +5,14 @@ from .jobs import bp as jobs_bp
 from .rankings import bp as rankings_bp
 from .analytics import bp as analytics_bp
 from .llm import bp as llm_bp
+from .health import bp as health_bp
 from dotenv import load_dotenv
 load_dotenv()
 
 
 def register_blueprints(app):
     """Register all blueprints with the Flask app."""
+    app.register_blueprint(health_bp)  # No prefix for health endpoints
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(resumes_bp, url_prefix='/api/resumes')
     app.register_blueprint(jobs_bp, url_prefix='/api/jobs')
